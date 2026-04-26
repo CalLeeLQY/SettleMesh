@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Merchant Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --panel: rgba(17, 24, 39, 0.88);
+        --text: #f3f4f6;
+        --muted: #9ca3af;
+        --accent: #3b82f6;
+        --accent-2: #22c55e;
+        --border: rgba(148, 163, 184, 0.2);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(59, 130, 246, 0.22), transparent 34%),
+          linear-gradient(180deg, #0b1020 0%, #111827 100%);
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+
+      .shell {
+        width: 100%;
+        max-width: 980px;
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 24px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        padding: 28px;
+        backdrop-filter: blur(14px);
+        box-shadow: 0 20px 70px rgba(0, 0, 0, 0.28);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(59, 130, 246, 0.14);
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        color: #bfdbfe;
+        font-size: 13px;
+      }
+
+      h1 {
+        font-size: 48px;
+        line-height: 1.05;
+        margin: 18px 0 16px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .lead {
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+        max-width: 52ch;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 28px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px 18px;
+        border-radius: 14px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: transform 120ms ease, opacity 120ms ease, background 120ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button.primary {
+        background: linear-gradient(135deg, var(--accent), #2563eb);
+        color: white;
+      }
+
+      .button.secondary {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 28px;
+      }
+
+      .stat {
+        padding: 18px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border);
+      }
+
+      .stat .label {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 10px;
+      }
+
+      .stat .value {
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .product {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .product-card {
+        padding: 18px;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .product-card h2 {
+        margin: 0 0 8px;
+        font-size: 20px;
+      }
+
+      .product-card .meta {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      .price {
+        margin-top: 14px;
+        font-size: 22px;
+        font-weight: 700;
+        color: #dcfce7;
+      }
+
+      .buy {
+        width: 100%;
+        margin-top: 16px;
+        border: 0;
+        border-radius: 14px;
+        padding: 14px 16px;
+        font-size: 15px;
+        font-weight: 600;
+        background: linear-gradient(135deg, var(--accent-2), #16a34a);
+        color: #052e16;
+        cursor: pointer;
+      }
+
+      .buy:active {
+        transform: translateY(1px);
+      }
+
+      .hint {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 860px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card">
+        <div class="badge">Local Merchant Test Site</div>
+        <h1>Simple merchant website for local checkout testing</h1>
+        <p class="lead">
+          This is a standalone demo storefront under the <code>test</code> folder. It now creates hosted checkout
+          sessions through your merchant backend and redirects the buyer into AnyPay.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="#products">Browse products</a>
+          <a class="button secondary" href="/health">Health check</a>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <div class="label">Store status</div>
+            <div class="value">Ready</div>
+          </div>
+          <div class="stat">
+            <div class="label">AnyPay integration</div>
+            <div class="value">API connected</div>
+          </div>
+          <div class="stat">
+            <div class="label">Local URL</div>
+            <div class="value">127.0.0.1:4020</div>
+          </div>
+          <div class="stat">
+            <div class="label">Next step</div>
+            <div class="value">Test checkout</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card product" id="products">
+        <div class="product-card">
+          <h2>Starter Pack</h2>
+          <p class="meta">A test product that creates a merchant checkout session and redirects into hosted AnyPay checkout.</p>
+          <div class="price">$0.10</div>
+          <button class="buy" type="button" id="buy-button">Buy with AnyPay</button>
+          <p class="hint" id="status">Click to create a real checkout session through your merchant API key.</p>
+        </div>
+
+        <div class="product-card">
+          <h2>What to add next</h2>
+          <p class="meta">
+            After this works, you can add logged-in user identity, order persistence, webhooks, and post-payment fulfillment.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const button = document.getElementById("buy-button");
+      const status = document.getElementById("status");
+      const pathname = window.location.pathname;
+
+      if (pathname === "/success") {
+        status.textContent = "Returned from merchant success page. You can inspect the completed checkout in AnyPay.";
+      }
+
+      if (pathname === "/cancel") {
+        status.textContent = "Checkout was canceled. You can try creating another session.";
+      }
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        status.textContent = "Creating checkout session...";
+
+        try {
+          const response = await fetch("/api/checkout", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              product_id: "starter-pack",
+              amount: 10,
+              description: "Starter Pack"
+            })
+          });
+
+          const payload = await response.json();
+
+          if (!response.ok || !payload.checkout_url) {
+            throw new Error(payload.error || "Failed to create checkout session");
+          }
+
+          status.textContent = "Checkout created. Redirecting to AnyPay...";
+          window.location.href = payload.checkout_url;
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : "Unexpected error creating checkout";
+          button.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

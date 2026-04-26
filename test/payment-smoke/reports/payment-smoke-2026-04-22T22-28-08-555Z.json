@@ -1,0 +1,219 @@
+{
+  "generatedAt": "2026-04-22T22:28:08.555Z",
+  "summary": {
+    "passed": 39,
+    "failed": 0,
+    "total": 39
+  },
+  "artifacts": {
+    "baseUrl": "http://localhost:3000",
+    "createdUsers": [
+      "728c09da-a18e-4850-a1aa-b524c5ccfe76",
+      "bfa74a8b-6b61-49ea-8de6-db7738d940ed"
+    ],
+    "checkoutIds": [
+      "30eb761a-82cc-4ac6-8aa4-d75f64c635d9",
+      "dc49f94b-8173-493a-9c1c-5ae026661312",
+      "65bb0e40-8fa1-4e51-949e-468d111b7da7",
+      "0cbe5939-9b85-47ad-bc2a-e00ad9141539"
+    ],
+    "merchantId": "0162351a-6274-479f-83b3-9a3c10cb6b6a"
+  },
+  "results": [
+    {
+      "name": "T01 register creates wallet for user A",
+      "ok": true,
+      "details": "wallet=0"
+    },
+    {
+      "name": "T01 register creates wallet for user B",
+      "ok": true,
+      "details": "wallet=0"
+    },
+    {
+      "name": "T02 protected dashboard redirects when logged out",
+      "ok": true,
+      "details": "status=307 location=/login"
+    },
+    {
+      "name": "T02 protected dashboard loads when logged in",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T03 mock topup endpoint succeeds",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T03 topup increases available credits",
+      "ok": true,
+      "details": "delta=100"
+    },
+    {
+      "name": "T03 topup order is created",
+      "ok": true,
+      "details": "payment_method=stripe"
+    },
+    {
+      "name": "T04 seller can publish a product",
+      "ok": true,
+      "details": "product=7251c267-19c4-4093-a6d2-2f3265eebec5"
+    },
+    {
+      "name": "T05 buyer can purchase a listed product",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T05 buyer balance decreases",
+      "ok": true,
+      "details": "delta=50"
+    },
+    {
+      "name": "T05 seller balance increases",
+      "ok": true,
+      "details": "delta=45"
+    },
+    {
+      "name": "T05 sales count increments",
+      "ok": true,
+      "details": "sales=1"
+    },
+    {
+      "name": "T06 user can register as merchant",
+      "ok": true,
+      "details": "merchant=0162351a-6274-479f-83b3-9a3c10cb6b6a"
+    },
+    {
+      "name": "T07 merchant can create API key",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T08 merchant guest checkout settings persist",
+      "ok": true,
+      "details": "min=100"
+    },
+    {
+      "name": "T10 setup ensures buyer has enough balance",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T09 merchant can create checkout session",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T10 logged-in user can complete credit checkout",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T10 checkout is marked completed",
+      "ok": true,
+      "details": "method=credit"
+    },
+    {
+      "name": "T10 buyer wallet is debited",
+      "ok": true,
+      "details": "delta=100"
+    },
+    {
+      "name": "T10 merchant wallet is credited",
+      "ok": true,
+      "details": "delta=95"
+    },
+    {
+      "name": "T11 insufficient-balance checkout shows top-up path",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T11 user can top up and then complete checkout",
+      "ok": true,
+      "details": "topup=200 confirm=200"
+    },
+    {
+      "name": "T12 guest checkout page is available",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T12 guest mock-fiat payment succeeds",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T12 guest payer info is stored",
+      "ok": true,
+      "details": "method=mock_fiat"
+    },
+    {
+      "name": "T12 merchant receives guest payment earnings",
+      "ok": true,
+      "details": "delta=114"
+    },
+    {
+      "name": "T13 merchant can query checkout status",
+      "ok": true,
+      "details": "status=completed"
+    },
+    {
+      "name": "T14 webhook is delivered",
+      "ok": true,
+      "details": "received"
+    },
+    {
+      "name": "T14 webhook signature is valid",
+      "ok": true,
+      "details": "validated"
+    },
+    {
+      "name": "T15 merchant earned_credit increases",
+      "ok": true,
+      "details": "earned=1204"
+    },
+    {
+      "name": "T16 setup seller A product for earned-credit reuse",
+      "ok": true,
+      "details": "product=93248669-5c0b-4f65-a892-e8444f0c6256"
+    },
+    {
+      "name": "T16 merchant can spend earned credits",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T17 invalid session page is handled",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T17 expired session page is handled",
+      "ok": true,
+      "details": "status=200"
+    },
+    {
+      "name": "T17 expired session cannot be paid",
+      "ok": true,
+      "details": "status=410"
+    },
+    {
+      "name": "T18 invalid API key is rejected on create",
+      "ok": true,
+      "details": "status=401"
+    },
+    {
+      "name": "T18 invalid API key is rejected on query",
+      "ok": true,
+      "details": "status=401"
+    },
+    {
+      "name": "T18 missing Authorization header is rejected",
+      "ok": true,
+      "details": "status=401"
+    }
+  ]
+}
