@@ -42,6 +42,10 @@ Required for Stripe flows:
 ```bash
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
+# Optional. Defaults to card so Checkout keeps working while account-level
+# payment methods are being reviewed. Use card,wechat_pay after Stripe enables
+# WeChat Pay for the account, or dynamic to let Stripe Dashboard decide.
+STRIPE_PAYMENT_METHOD_TYPES=card
 ```
 
 Configure the Stripe webhook endpoint to send Checkout events to

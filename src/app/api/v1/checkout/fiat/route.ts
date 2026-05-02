@@ -1,4 +1,4 @@
-import { dollarsToCents, getStripeClient } from "@/lib/stripe";
+import { dollarsToCents, getStripeCheckoutPaymentMethodConfig, getStripeClient } from "@/lib/stripe";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     const stripe = getStripeClient();
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "payment",
-      payment_method_types: ["card"],
+      ...getStripeCheckoutPaymentMethodConfig(),
       client_reference_id: checkoutSessionRow.id,
       customer_email: typeof payer_email === "string" && payer_email.trim() ? payer_email.trim() : undefined,
       success_url: returnUrl.toString(),
