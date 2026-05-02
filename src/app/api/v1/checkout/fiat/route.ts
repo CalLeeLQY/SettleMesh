@@ -1,7 +1,13 @@
-import { getAdminClient } from "@/lib/merchant-auth";
-import { canUseGuestFiatCheckout } from "@/lib/payment-options";
 import { dollarsToCents, getStripeClient } from "@/lib/stripe";
+import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+type StripeFiatCheckout = {
+  id: string;
+  amount_credit: number;
+  description: string;
+  merchant_name: string;
+};
 
 export async function POST(request: Request) {
   let body: { session_id?: string; payer_email?: string; payer_name?: string };
@@ -18,46 +24,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
   }
 
-  const admin = getAdminClient();
-
-  const { data: session } = await admin
-    .from("checkout_sessions")
-    .select("*, merchants(id, user_id, name, allow_guest_checkout, guest_checkout_min_credit, mock_fiat_enabled)")
-    .eq("id", session_id)
-    .eq("status", "pending")
+  const supabase = await createClient();
+  const { data: session, error: sessionErr } = await supabase
+    .rpc("prepare_stripe_fiat_checkout", {
+      p_session_id: session_id,
+      p_payer_email: typeof payer_email === "string" ? payer_email : null,
+      p_payer_name: typeof payer_name === "string" ? payer_name : null,
+    })
     .single();
 
-  if (!session) {
-    return NextResponse.json(
-      { error: "Checkout session not found or already completed" },
-      { status: 404 }
-    );
+  if (sessionErr) {
+    return NextResponse.json({ error: sessionErr.message || "Checkout session not found" }, { status: 400 });
   }
 
-  if (new Date(session.expires_at) < new Date()) {
-    await admin.from("checkout_sessions").update({ status: "expired" }).eq("id", session.id);
-    return NextResponse.json({ error: "Checkout session expired" }, { status: 410 });
-  }
-
-  const creditAmount = session.amount_credit;
+  const checkoutSessionRow = session as StripeFiatCheckout;
+  const creditAmount = checkoutSessionRow.amount_credit;
   const fiatAmount = Number((creditAmount / 100).toFixed(2));
 
   if (!Number.isFinite(fiatAmount) || fiatAmount <= 0) {
+    await supabase.rpc("mark_stripe_fiat_checkout_failed", {
+      p_session_id: session_id,
+      p_payer_email: typeof payer_email === "string" ? payer_email : null,
+      p_payer_name: typeof payer_name === "string" ? payer_name : null,
+    });
     return NextResponse.json({ error: "Invalid checkout amount" }, { status: 400 });
-  }
-
-  const merchant = session.merchants as {
-    id: string;
-    name: string;
-    allow_guest_checkout?: boolean;
-    guest_checkout_min_credit?: number;
-    mock_fiat_enabled?: boolean;
-  } | null;
-  const merchantName = merchant?.name ?? "Merchant";
-  const fiatCheckoutAvailable = canUseGuestFiatCheckout(merchant, creditAmount);
-
-  if (!fiatCheckoutAvailable) {
-    return NextResponse.json({ error: "Fiat checkout is unavailable for this payment" }, { status: 400 });
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
@@ -69,13 +59,14 @@ export async function POST(request: Request) {
     const stripe = getStripeClient();
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: "payment",
-      client_reference_id: session.id,
+      payment_method_types: ["card"],
+      client_reference_id: checkoutSessionRow.id,
       customer_email: typeof payer_email === "string" && payer_email.trim() ? payer_email.trim() : undefined,
       success_url: returnUrl.toString(),
       cancel_url: new URL(`/checkout/${session_id}`, baseUrl).toString(),
       metadata: {
         kind: "checkout_fiat",
-        checkout_session_id: session.id,
+        checkout_session_id: checkoutSessionRow.id,
       },
       line_items: [
         {
@@ -84,7 +75,7 @@ export async function POST(request: Request) {
             currency: "usd",
             unit_amount: dollarsToCents(fiatAmount),
             product_data: {
-              name: `${merchantName}: ${session.description}`,
+              name: `${checkoutSessionRow.merchant_name}: ${checkoutSessionRow.description}`,
               description: `${creditAmount.toLocaleString()} AnyPay credits`,
             },
           },
@@ -92,37 +83,30 @@ export async function POST(request: Request) {
       ],
     });
 
-    await admin
-      .from("checkout_sessions")
-      .update({
-        payer_id: null,
-        payer_email: typeof payer_email === "string" && payer_email.trim() ? payer_email.trim() : null,
-        payer_name: typeof payer_name === "string" ? payer_name : null,
-        payment_provider_id: checkoutSession.id,
-        payment_provider_session: JSON.stringify(checkoutSession),
-        payment_provider_status: "awaiting_payment",
-        payment_started_at: new Date().toISOString(),
-      })
-      .eq("id", session.id);
+    const { error: attachErr } = await supabase.rpc("attach_stripe_fiat_checkout_provider", {
+      p_session_id: checkoutSessionRow.id,
+      p_provider_id: checkoutSession.id,
+      p_provider_session: JSON.stringify(checkoutSession),
+      p_payer_email: typeof payer_email === "string" ? payer_email : null,
+      p_payer_name: typeof payer_name === "string" ? payer_name : null,
+    });
+
+    if (attachErr) {
+      throw new Error(attachErr.message || "Failed to attach Stripe session");
+    }
 
     return NextResponse.json({
       success: true,
-      session_id: session.id,
+      session_id: checkoutSessionRow.id,
       payment_url: checkoutSession.url,
       fiat_amount: fiatAmount,
     });
   } catch (error) {
-    await admin
-      .from("checkout_sessions")
-      .update({
-        payer_id: null,
-        payer_email: typeof payer_email === "string" && payer_email.trim() ? payer_email.trim() : null,
-        payer_name: typeof payer_name === "string" ? payer_name : null,
-        payment_provider_status: "failed",
-        payment_started_at: new Date().toISOString(),
-      })
-      .eq("id", session.id)
-      .eq("status", "pending");
+    await supabase.rpc("mark_stripe_fiat_checkout_failed", {
+      p_session_id: checkoutSessionRow.id,
+      p_payer_email: typeof payer_email === "string" ? payer_email : null,
+      p_payer_name: typeof payer_name === "string" ? payer_name : null,
+    });
 
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create payment" },
