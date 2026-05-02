@@ -1,6 +1,6 @@
-import { finalizeFiatCheckoutSession } from "@/lib/checkout";
 import { getAdminClient } from "@/lib/merchant-auth";
-import { queryXunhuPayment } from "@/lib/xunhupay";
+import { finalizeStripeFiatCheckoutSession } from "@/lib/stripe-finalizers";
+import { getStripeClient } from "@/lib/stripe";
 import { NextResponse } from "next/server";
 
 type CheckoutSessionRow = {
@@ -11,6 +11,7 @@ type CheckoutSessionRow = {
   payment_method: string | null;
   payment_provider_id: string | null;
   payment_provider_status: string | null;
+  amount_credit: number;
 };
 
 export async function GET(request: Request) {
@@ -26,7 +27,7 @@ export async function GET(request: Request) {
   const readSession = async () => {
     const { data, error } = await admin
       .from("checkout_sessions")
-      .select("id, status, expires_at, completed_at, payment_method, payment_provider_id, payment_provider_status")
+      .select("id, status, expires_at, completed_at, payment_method, payment_provider_id, payment_provider_status, amount_credit")
       .eq("id", sessionId)
       .single();
 
@@ -48,53 +49,32 @@ export async function GET(request: Request) {
 
   if (session.payment_provider_status === "awaiting_payment" || session.payment_provider_id) {
     try {
-      const currentSession = session;
-      const queryWithTimeout = async () => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        try {
-          return await queryXunhuPayment({
-            tradeOrderId: currentSession.id,
-            openOrderId: currentSession.payment_provider_id ?? undefined,
-          });
-        } finally {
-          clearTimeout(timer);
+      if (session.payment_provider_id) {
+        const stripe = getStripeClient();
+        const stripeSession = await stripe.checkout.sessions.retrieve(session.payment_provider_id);
+
+        if (stripeSession.payment_status === "paid") {
+          const result = await finalizeStripeFiatCheckoutSession(stripeSession);
+          if (!result.ok) {
+            return NextResponse.json({ error: result.error ?? "Failed to finalize payment" }, { status: Number(result.status ?? 500) });
+          }
         }
-      };
 
-      const query = await queryWithTimeout();
-
-      if (query.status === "OD") {
-        await admin
-          .from("checkout_sessions")
-          .update({
-            payment_provider_id: query.providerOrderId,
-            payment_provider_session: JSON.stringify(query.raw),
-            payment_provider_status: "paid",
-          })
-          .eq("id", session.id);
-
-        const result = await finalizeFiatCheckoutSession(session.id);
-        if (!result.ok) {
-          return NextResponse.json({ error: result.error ?? "Failed to finalize payment" }, { status: Number(result.status ?? 500) });
+        if (stripeSession.status === "expired") {
+          await admin
+            .from("checkout_sessions")
+            .update({
+              payment_provider_session: JSON.stringify(stripeSession),
+              payment_provider_status: "expired",
+            })
+            .eq("id", session.id)
+            .eq("status", "pending");
         }
-      }
-
-      if (query.status === "CD") {
-        await admin
-          .from("checkout_sessions")
-          .update({
-            payment_provider_id: query.providerOrderId,
-            payment_provider_session: JSON.stringify(query.raw),
-            payment_provider_status: "failed",
-          })
-          .eq("id", session.id)
-          .eq("status", "pending");
       }
 
       session = (await readSession()) ?? session;
     } catch (error) {
-      console.error("[checkout/fiat/status] XunhuPay query failed:", error);
+      console.error("[checkout/fiat/status] Stripe query failed:", error);
     }
   }
 

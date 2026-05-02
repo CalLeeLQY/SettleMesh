@@ -537,13 +537,18 @@ async function main() {
 
     const webhookHit = webhook.hits.find((hit) => hit.body.includes(guestCheckoutId));
     const expectedSignature = webhookHit
-      ? crypto.createHmac("sha256", merchantRow.webhook_secret).update(webhookHit.body).digest("hex")
+      ? crypto
+          .createHmac("sha256", merchantRow.webhook_secret)
+          .update(`${webhookHit.headers["x-anypay-timestamp"]}.${webhookHit.body}`)
+          .digest("hex")
       : null;
 
     record("T14 webhook is delivered", !!webhookHit, webhookHit ? "received" : "missing");
     record(
       "T14 webhook signature is valid",
-      !!webhookHit && webhookHit.headers["x-anypay-signature"] === expectedSignature,
+      !!webhookHit &&
+        webhookHit.headers["x-anypay-signature-version"] === "v1" &&
+        webhookHit.headers["x-anypay-signature"] === expectedSignature,
       webhookHit ? "validated" : "no webhook"
     );
 

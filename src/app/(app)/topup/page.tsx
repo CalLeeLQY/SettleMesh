@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getSafeRedirectPath } from "@/lib/redirect";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Coins, Check } from "lucide-react";
 
@@ -31,9 +32,20 @@ function TopupContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = getSafeRedirectPath(searchParams.get("next"), "/dashboard");
   const orderId = searchParams.get("order_id") as string | null;
   const supabase = useMemo(() => createClient(), []);
+
+  function isStripeCheckoutUrl(value: unknown): value is string {
+    if (typeof value !== "string") return false;
+
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && url.hostname.endsWith("stripe.com");
+    } catch {
+      return false;
+    }
+  }
 
   useEffect(() => {
     supabase
@@ -129,8 +141,6 @@ function TopupContent() {
       return;
     }
 
-    // For MVP: direct credit grant (no real payment gateway yet)
-    // In production, this would create a Stripe checkout session
     const res = await fetch("/api/topup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -139,8 +149,14 @@ function TopupContent() {
     const payload = await res.json().catch(() => null);
 
     if (res.ok) {
-      if (payload?.payment_url) {
+      if (isStripeCheckoutUrl(payload?.payment_url)) {
         window.location.assign(payload.payment_url);
+        return;
+      }
+
+      if (payload?.payment_url) {
+        setErrorMessage("Payment provider returned a non-Stripe checkout URL.");
+        setLoading(false);
         return;
       }
 
@@ -226,7 +242,7 @@ function TopupContent() {
         disabled={!selected || loading}
         className="w-full mt-6 py-3 bg-accent text-white rounded-xl font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors"
       >
-        {loading ? "Processing..." : "Purchase Credits"}
+        {loading ? "Opening Stripe..." : "Purchase with Stripe"}
       </button>
 
       {errorMessage && (

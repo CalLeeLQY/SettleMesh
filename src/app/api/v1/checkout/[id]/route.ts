@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { verifyApiKey, getAdminClient } from "@/lib/merchant-auth";
+import { getCheckoutPaymentOptions } from "@/lib/payment-options";
+import {
+  buildCheckoutProtocol,
+  creditAmountToUsd,
+  getRequestBaseUrl,
+} from "@/lib/protocol";
 
 export async function GET(
   request: Request,
@@ -34,19 +40,18 @@ export async function GET(
     return NextResponse.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const guestCheckoutAvailable =
-    merchant.allow_guest_checkout !== false &&
-    merchant.mock_fiat_enabled !== false &&
-    session.amount_credit >= (merchant.guest_checkout_min_credit ?? 0);
+  const paymentMethods = getCheckoutPaymentOptions(merchant, session.amount_credit);
+  const baseUrl = getRequestBaseUrl(request);
 
   return NextResponse.json({
     ...session,
-    payment_methods: {
-      credit: true,
-      fiat: guestCheckoutAvailable,
-      mock_fiat: guestCheckoutAvailable,
-    },
-    fiat_amount_usd: Number((session.amount_credit / 100).toFixed(2)),
-    mock_fiat_amount_usd: Number((session.amount_credit / 100).toFixed(2)),
+    payment_methods: paymentMethods,
+    fiat_amount_usd: creditAmountToUsd(session.amount_credit),
+    mock_fiat_amount_usd: creditAmountToUsd(session.amount_credit),
+    payment_protocol: buildCheckoutProtocol({
+      baseUrl,
+      session,
+      paymentMethods,
+    }),
   });
 }

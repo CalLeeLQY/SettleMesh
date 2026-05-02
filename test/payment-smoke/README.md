@@ -27,6 +27,8 @@ The suite exercises these core flows:
 
 - AnyPay app running locally, usually at `http://localhost:3000`
 - valid Supabase keys in the repo root `.env.local`
+- mock fiat enabled in the app runtime. Local `next dev` enables it by default;
+  hosted or production-like environments must set `ENABLE_MOCK_FIAT_CHECKOUT=true`.
 - base data already present in Supabase:
   - `topup_packages`
   - wallet/profile auto-provisioning
@@ -72,6 +74,6 @@ Each report includes:
 
 ## Notes
 
-- This suite intentionally tests the current mock flows. It does not use Stripe, WeChat Pay, or Alipay.
+- This suite intentionally tests the current mock flows. Stripe Checkout flows require webhook forwarding and are not fully covered here.
 - The script creates disposable test users and merchant records in Supabase.
 - It does not delete generated data so that webhook/session/order traces remain available for inspection.

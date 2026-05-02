@@ -12,7 +12,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { merchant_id } = await request.json();
+  let body: { merchant_id?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { merchant_id } = body;
+  if (!merchant_id) {
+    return NextResponse.json({ error: "Missing merchant_id" }, { status: 400 });
+  }
 
   // Verify the merchant belongs to the user
   const { data: merchant } = await supabase
@@ -54,7 +64,17 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { key_id } = await request.json();
+  let body: { key_id?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { key_id } = body;
+  if (!key_id) {
+    return NextResponse.json({ error: "Missing key_id" }, { status: 400 });
+  }
 
   // Verify ownership via RLS — the policy checks merchant.user_id = auth.uid()
   const { error } = await supabase

@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getSafeRedirectPath } from "@/lib/redirect";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -20,7 +21,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const next = getSafeRedirectPath(searchParams.get("next"), "/dashboard");
   const supabase = createClient();
 
   async function handleLogin(e: React.FormEvent) {

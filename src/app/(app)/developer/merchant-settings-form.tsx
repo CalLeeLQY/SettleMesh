@@ -103,8 +103,11 @@ export function MerchantSettingsForm({
           checked={mockFiatEnabled}
           onChange={(event) => setMockFiatEnabled(event.target.checked)}
         />
-        Enable mock fiat checkout
+        Enable mock fiat checkout for tests
       </label>
+      <p className="text-xs text-gray-500">
+        Real Stripe fiat checkout is controlled by guest checkout settings. Mock fiat also requires the server runtime switch.
+      </p>
       <div>
         <label className="block text-sm font-medium mb-1">Guest checkout minimum (credits)</label>
         <input

@@ -12,12 +12,12 @@
 - 用户注册为商户并创建 API Key
 - 商户通过 API 创建 Hosted Checkout Session
 - 消费者通过 Hosted Checkout 完成支付
-- 双轨收银台：登录用户 Credit 支付 + 访客 mock fiat 支付
+- 双轨收银台：登录用户 Credit 支付 + 访客 Stripe fiat 支付
 - 商户收入入账为 Credit
 - 用户作为商户赚到的 Credit 可继续用于支付
 - 支付完成后的跳转、Webhook、会话状态查询
 
-本文档**优先使用 mock 货币和当前 mock 支付能力测试**，不依赖 Stripe、微信支付等真实支付网关。
+本文档优先覆盖当前 MVP 已接入的 Stripe 充值/法币支付与本地 mock-fiat 测试能力。
 
 ---
 
@@ -31,24 +31,24 @@
 - Checkout Session 创建与查询
 - Hosted Checkout 页面
 - 登录 Credit 支付
-- 访客 mock fiat 支付
-- 用户充值页与 mock 充值
+- 访客 Stripe fiat 支付
+- 用户充值页与 Stripe 充值
 - 商户收入进入用户钱包
 
 ### 2.2 当前为 mock 或未接真实支付渠道
 
 以下功能目前不属于真实资金流测试范围：
 
-- Stripe 实际扣款
 - 微信支付 / 支付宝实际扣款
 - 真实银行 / 卡组织结算
 - 拒付、退款、风控
 - 法币对账
 
-因此本测试文档中的“法币支付”均指：
+因此本测试文档中的“法币支付”主要指：
 
-- **收银台上的 mock fiat 流程**
-- **充值页上的 mock 充值流程**
+- **收银台上的 Stripe fiat 流程**
+- **充值页上的 Stripe Checkout 充值流程**
+- **本地或显式开启时的 mock-fiat 测试流程**
 
 ---
 
@@ -60,6 +60,8 @@
 
 - 本地开发服务已启动
 - Supabase 环境变量已正确配置
+- Stripe 环境变量已正确配置：`STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`
+- Stripe webhook 已转发到 `/api/stripe/webhook`
 - 数据库迁移已执行完成
 - 当前测试环境中存在基础数据：
   - `topup_packages`
@@ -145,7 +147,7 @@ http://localhost:3000
 |------|------|--------|
 | T01 | 用户注册 | 高 |
 | T02 | 用户登录 / 退出 | 高 |
-| T03 | 用户 mock 充值 Credit | 高 |
+| T03 | 用户 Stripe 充值 Credit | 高 |
 | T04 | 用户发布商品 | 中 |
 | T05 | 站内商品 Credit 购买 | 高 |
 | T06 | 用户注册商户 | 高 |
@@ -204,7 +206,7 @@ http://localhost:3000
 
 ---
 
-## T03 用户 mock 充值 Credit
+## T03 用户 Stripe 充值 Credit
 
 ### 前置条件
 
@@ -216,10 +218,11 @@ http://localhost:3000
 1. 打开 `/topup`
 2. 选择一个充值包
 3. 点击 `Purchase Credits`
+4. 在 Stripe Checkout 完成付款并回到 `/topup`
 
 ### 预期结果
 
-- 页面显示 `Credits added!`
+- 支付完成后页面显示 `Credits added!`
 - 稍后跳转到默认页面或 `next` 指定页面
 - 钱包 `available_credit` 增加
 - 钱包 `purchased_credit` 增加
@@ -230,7 +233,7 @@ http://localhost:3000
 ### 建议额外核对
 
 - `topup_orders.status = completed`
-- `payment_method` 当前虽写为 `stripe`，但本质是 mock 测试流程
+- `payment_method = stripe`
 
 ---
 
@@ -341,7 +344,7 @@ http://localhost:3000
 1. 进入 `/developer`
 2. 修改以下配置：
    - `Enable guest checkout`
-   - `Enable mock fiat checkout`
+   - `Enable mock fiat checkout for tests`
    - `Guest checkout minimum (credits)`
 3. 点击保存
 
@@ -355,7 +358,7 @@ http://localhost:3000
 
 - 组合 A：全部开启，最低门槛 0
 - 组合 B：开启 guest，但最低门槛高于测试订单金额
-- 组合 C：关闭 mock fiat
+- 组合 C：关闭 mock fiat，确认真实 Stripe fiat 仍由 guest checkout 设置控制
 
 ---
 
@@ -388,12 +391,16 @@ curl -X POST http://localhost:3000/api/v1/checkout/create \
 - 返回 `session.id`
 - 返回 hosted checkout `url`
 - 返回 `payment_methods`
-- 返回 `mock_fiat_amount_usd`
+- 返回 `fiat_amount_usd`
+- 如运行时开启 mock 支付，则返回 `mock_fiat_amount_usd`
 - `checkout_sessions` 表新增记录
 
 ### 重点验证
 
 - 当订单金额低于商户设置门槛时：
+  - `payment_methods.fiat` 应为 `false`
+  - `payment_methods.mock_fiat` 应为 `false`
+- 当 `ENABLE_MOCK_FIAT_CHECKOUT` 未开启且不是本地开发环境时：
   - `payment_methods.mock_fiat` 应为 `false`
 
 ---
@@ -441,16 +448,16 @@ curl -X POST http://localhost:3000/api/v1/checkout/create \
 1. 访问 checkout 页面
 2. 点击 `Top up credits`
 3. 进入 `/topup?next=/checkout/{sessionId}`
-4. 完成一次 mock 充值
-5. 观察是否返回 checkout 页面
-6. 再次完成支付
+4. 完成一次 Stripe 充值
+5. 观察是否返回 checkout 页面，且 linked checkout 已自动完成
 
 ### 预期结果
 
 - 首次进入 checkout 时提示余额不足
 - 可跳转到充值页
 - 充值成功后返回原 checkout
-- 返回后可成功完成支付
+- `topup_orders.checkout_session_id` 绑定原 checkout session
+- 原 checkout session 自动完成，`payment_method = credit`
 
 ---
 
@@ -460,6 +467,7 @@ curl -X POST http://localhost:3000/api/v1/checkout/create \
 
 - 商户已开启 guest checkout
 - 商户已开启 mock fiat
+- 运行时允许 mock 支付：本地开发默认开启，其他环境需显式设置 `ENABLE_MOCK_FIAT_CHECKOUT=true`
 - 订单金额满足 `guest_checkout_min_credit`
 - 当前浏览器处于未登录状态
 
@@ -526,21 +534,23 @@ curl -X GET http://localhost:3000/api/v1/checkout/{session_id} \
 1. 完成一次 checkout 支付
 2. 查看 webhook 接收端内容
 3. 核对 Header 与 Body
-4. 使用 `webhook_secret` 本地重新计算签名
+4. 使用 `webhook_secret` 本地按 v1 规则重新计算签名：
+   `{X-AnyPay-Timestamp}.{raw_body}`
 
 ### 预期结果
 
 - 收到 `checkout.completed`
 - Header 中含：
   - `X-AnyPay-Signature`
+  - `X-AnyPay-Signature-Version: v1`
   - `X-AnyPay-Timestamp`
 - Payload 包含：
   - `id`
   - `external_id`
   - `amount_credit`
-  - `platform_fee`
-  - `net_credit`
   - `metadata`
+  - `payer_id`
+  - `payer_email`
   - `payment_method`
   - `completed_at`
 - 验签通过
@@ -692,7 +702,7 @@ curl -X GET http://localhost:3000/api/v1/checkout/{session_id} \
 
 1. T01 用户注册
 2. T02 用户登录
-3. T03 mock 充值
+3. T03 Stripe 充值
 4. T04 发布商品
 5. T05 站内商品购买
 6. T06 注册商户
@@ -715,8 +725,8 @@ curl -X GET http://localhost:3000/api/v1/checkout/{session_id} \
 
 测试时需要明确以下限制，避免误判为缺陷：
 
-- `/api/topup` 目前是 mock 充值，不是 Stripe 实扣
-- Guest fiat 目前是 mock fiat，不是信用卡真实扣款
+- `/api/topup` 目前使用 Stripe Checkout 下单和 webhook/状态轮询入账
+- Guest fiat 使用 Stripe Checkout；mock-fiat 仅用于本地或显式开启的测试环境
 - 当前没有完整退款流
 - 当前没有真实拒付 / 风控流程
 - 当前没有商户提现能力
@@ -760,7 +770,7 @@ curl -X GET http://localhost:3000/api/v1/checkout/{session_id} \
 - T12
 - T17
 
-### 10.4 接入真实 Stripe / 微信支付后
+### 10.4 改动真实 Stripe / 其他支付渠道后
 
 需要新增专项测试：
 
@@ -828,7 +838,7 @@ TXX
 - 用户可注册为商户并生成 API Key
 - 商户可成功创建 checkout session
 - 登录用户可使用 Credit 完成支付
-- 未登录用户可使用 mock fiat 完成 guest checkout
+- 未登录用户可使用 Stripe fiat 完成 guest checkout
 - 商户可收到 webhook
 - 商户收入可进入钱包
 - 商户赚到的 Credit 可再次用于消费

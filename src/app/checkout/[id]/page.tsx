@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { canUseGuestFiatCheckout } from "@/lib/payment-options";
 import { Coins } from "lucide-react";
 import { CheckoutForm } from "./checkout-form";
 
@@ -86,10 +87,7 @@ export default async function CheckoutPage({
     mock_fiat_enabled?: boolean;
   } | null;
   const fiatAmountUsd = Number((session.amount_credit / 100).toFixed(2));
-  const allowFiatCheckout =
-    merchant?.allow_guest_checkout !== false &&
-    merchant?.mock_fiat_enabled !== false &&
-    session.amount_credit >= (merchant?.guest_checkout_min_credit ?? 0);
+  const allowFiatCheckout = canUseGuestFiatCheckout(merchant, session.amount_credit);
 
   return (
     <div className="flex flex-1 items-center justify-center px-4">

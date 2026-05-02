@@ -1,4 +1,5 @@
-import { getAdminClient, signWebhookPayload } from "@/lib/merchant-auth";
+import { getAdminClient } from "@/lib/merchant-auth";
+import { deliverCheckoutWebhook } from "@/lib/webhook-delivery";
 
 interface CompleteCheckoutInput {
   sessionId: string;
@@ -8,6 +9,29 @@ interface CompleteCheckoutInput {
   payerName?: string | null;
   allowExpired?: boolean;
 }
+
+type CompleteCheckoutRpcResult = {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  already_processed?: boolean;
+  session_id?: string;
+  payment_method?: CompleteCheckoutInput["paymentMethod"];
+  merchant_name?: string;
+  credits_remaining?: number | null;
+  completed_at?: string;
+  amount_credit?: number;
+  external_id?: string | null;
+  description?: string;
+  metadata?: unknown;
+  payer_id?: string | null;
+  payer_email?: string | null;
+  payer_name?: string | null;
+  webhook_url?: string | null;
+  webhook_secret?: string | null;
+  merchant_id?: string | null;
+  merchant_user_id?: string | null;
+};
 
 export async function completeCheckoutSession({
   sessionId,
@@ -19,208 +43,80 @@ export async function completeCheckoutSession({
 }: CompleteCheckoutInput) {
   const admin = getAdminClient();
 
-  const { data: session } = await admin
-    .from("checkout_sessions")
-    .select(
-      "*, merchants(id, user_id, name, webhook_url, webhook_secret, allow_guest_checkout, guest_checkout_min_credit, mock_fiat_enabled)"
-    )
-    .eq("id", sessionId)
-    .in("status", allowExpired ? ["pending", "expired"] : ["pending"])
-    .single();
+  const { data, error } = await admin.rpc("complete_checkout_session", {
+    p_session_id: sessionId,
+    p_payment_method: paymentMethod,
+    p_payer_id: payerId,
+    p_payer_email: payerEmail,
+    p_payer_name: payerName,
+    p_allow_expired: allowExpired,
+  });
 
-  if (!session) {
-    return { ok: false as const, status: 404, error: "Session not found or already completed" };
+  const result = data as CompleteCheckoutRpcResult | null;
+  if (error || !result) {
+    return {
+      ok: false as const,
+      status: 500,
+      error: error?.message ?? "Failed to complete checkout",
+    };
   }
 
-  if (session.status === "expired" && !allowExpired) {
-    return { ok: false as const, status: 410, error: "Session expired" };
+  if (!result.ok) {
+    return {
+      ok: false as const,
+      status: Number(result.status ?? 500),
+      error: result.error ?? "Failed to complete checkout",
+    };
   }
 
-  if (new Date(session.expires_at) < new Date() && !allowExpired) {
-    await admin
-      .from("checkout_sessions")
-      .update({ status: "expired" })
-      .eq("id", session.id);
+  const resolvedSessionId = result.session_id ?? sessionId;
+  const resolvedPaymentMethod = result.payment_method ?? paymentMethod;
+  const completedAt = result.completed_at ?? new Date().toISOString();
 
-    return { ok: false as const, status: 410, error: "Session expired" };
-  }
+  if (!result.already_processed && result.webhook_url && result.webhook_secret) {
+    let merchantId = result.merchant_id ?? null;
+    if (!merchantId) {
+      const { data: session } = await admin
+        .from("checkout_sessions")
+        .select("merchant_id")
+        .eq("id", resolvedSessionId)
+        .single();
 
-  const merchant = session.merchants as {
-    id: string;
-    user_id: string;
-    name: string;
-    webhook_url: string | null;
-    webhook_secret: string;
-    allow_guest_checkout?: boolean;
-    guest_checkout_min_credit?: number;
-    mock_fiat_enabled?: boolean;
-  };
-
-  const amount = session.amount_credit;
-
-  const usesWalletBalance = paymentMethod === "credit";
-
-  if (paymentMethod === "mock_fiat" || paymentMethod === "fiat") {
-    const guestAllowed =
-      merchant.allow_guest_checkout !== false &&
-      merchant.mock_fiat_enabled !== false &&
-      amount >= (merchant.guest_checkout_min_credit ?? 0);
-
-    if (!guestAllowed) {
-      return { ok: false as const, status: 400, error: "Guest checkout is not available for this payment" };
-    }
-  }
-
-  let creditsRemaining: number | null = null;
-
-  if (usesWalletBalance) {
-    if (!payerId) {
-      return { ok: false as const, status: 401, error: "Unauthorized" };
+      merchantId = session?.merchant_id ?? null;
     }
 
-    const { data: payerWallet } = await admin
-      .from("wallets")
-      .select("id, available_credit, total_spent")
-      .eq("user_id", payerId)
-      .single();
-
-    if (!payerWallet) {
-      return { ok: false as const, status: 500, error: "Wallet not found" };
-    }
-
-    if (payerWallet.available_credit < amount) {
-      return { ok: false as const, status: 400, error: "Insufficient credits" };
-    }
-
-    const newPayerBalance = payerWallet.available_credit - amount;
-    creditsRemaining = newPayerBalance;
-
-    await admin
-      .from("wallets")
-      .update({
-        available_credit: newPayerBalance,
-        total_spent: payerWallet.total_spent + amount,
-      })
-      .eq("id", payerWallet.id);
-
-    const { data: debitTxn } = await admin
-      .from("ledger_transactions")
-      .insert({
-        type: "purchase",
-        reference_type: "checkout_session",
-        reference_id: session.id,
-        description: `Checkout: ${session.description}`,
-        idempotency_key: `checkout_${session.id}_${paymentMethod}`,
-      })
-      .select()
-      .single();
-
-    if (debitTxn) {
-      await admin.from("ledger_entries").insert({
-        transaction_id: debitTxn.id,
-        wallet_id: payerWallet.id,
-        entry_type: "debit",
-        amount,
-        balance_after: newPayerBalance,
-        credit_source: "purchased",
-      });
-    }
-  }
-
-  const { data: merchantWallet } = await admin
-    .from("wallets")
-    .select("id, available_credit, earned_credit, total_earned")
-    .eq("user_id", merchant.user_id)
-    .single();
-
-  if (!merchantWallet) {
-    return { ok: false as const, status: 500, error: "Merchant wallet not found" };
-  }
-
-  const newMerchantBalance = merchantWallet.available_credit + amount;
-
-  await admin
-    .from("wallets")
-    .update({
-      available_credit: newMerchantBalance,
-      earned_credit: merchantWallet.earned_credit + amount,
-      total_earned: merchantWallet.total_earned + amount,
-    })
-    .eq("id", merchantWallet.id);
-
-  const { data: creditTxn } = await admin
-    .from("ledger_transactions")
-    .insert({
-      type: "earning",
-      reference_type: "checkout_session",
-      reference_id: session.id,
-      description: `Earning from checkout: ${session.description}`,
-      idempotency_key: `checkout_${session.id}_${paymentMethod}_earning`,
-    })
-    .select()
-    .single();
-
-  if (creditTxn) {
-    await admin.from("ledger_entries").insert({
-      transaction_id: creditTxn.id,
-      wallet_id: merchantWallet.id,
-      entry_type: "credit",
-      amount,
-      balance_after: newMerchantBalance,
-      credit_source: "earned",
-    });
-  }
-
-  const completedAt = new Date().toISOString();
-
-  await admin
-    .from("checkout_sessions")
-    .update({
-      status: "completed",
-      payer_id: payerId,
-      payer_email: payerEmail,
-      payer_name: payerName,
-      payment_method: paymentMethod,
-      completed_at: completedAt,
-    })
-    .eq("id", session.id);
-
-  if (merchant.webhook_url) {
     const webhookPayload = JSON.stringify({
       event: "checkout.completed",
       data: {
-        id: session.id,
-        external_id: session.external_id,
-        amount_credit: amount,
-        description: session.description,
-        metadata: session.metadata,
-        payer_id: payerId,
-        payer_email: payerEmail,
-        payer_name: payerName,
-        payment_method: paymentMethod,
+        id: resolvedSessionId,
+        external_id: result.external_id ?? null,
+        amount_credit: result.amount_credit,
+        description: result.description,
+        metadata: result.metadata ?? {},
+        payer_id: result.payer_id ?? payerId,
+        payer_email: result.payer_email ?? payerEmail,
+        payer_name: result.payer_name ?? payerName,
+        payment_method: resolvedPaymentMethod,
         completed_at: completedAt,
       },
     });
 
-    const signature = signWebhookPayload(webhookPayload, merchant.webhook_secret);
-
-    fetch(merchant.webhook_url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-AnyPay-Signature": signature,
-        "X-AnyPay-Timestamp": Date.now().toString(),
-      },
-      body: webhookPayload,
-    }).catch(() => {});
+    await deliverCheckoutWebhook({
+      checkoutSessionId: resolvedSessionId,
+      merchantId,
+      webhookUrl: result.webhook_url,
+      webhookSecret: result.webhook_secret,
+      payload: webhookPayload,
+    });
   }
 
   return {
     ok: true as const,
-    session,
-    paymentMethod,
-    merchantName: merchant.name,
-    creditsRemaining,
+    alreadyProcessed: Boolean(result.already_processed),
+    session: { id: resolvedSessionId },
+    paymentMethod: resolvedPaymentMethod,
+    merchantName: result.merchant_name,
+    creditsRemaining: result.credits_remaining ?? null,
   };
 }
 

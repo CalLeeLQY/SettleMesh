@@ -12,7 +12,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { session_id } = await request.json();
+  let body: { session_id?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { session_id } = body;
   if (!session_id) {
     return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
   }
@@ -32,4 +39,4 @@ export async function POST(request: Request) {
     session_id: result.session.id,
     credits_remaining: result.creditsRemaining,
   });
- }
+}

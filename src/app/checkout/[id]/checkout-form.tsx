@@ -33,6 +33,17 @@ export function CheckoutForm({
   const [success, setSuccess] = useState(false);
   const canAfford = balance >= amount;
 
+  function isStripeCheckoutUrl(value: unknown): value is string {
+    if (typeof value !== "string") return false;
+
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" && url.hostname.endsWith("stripe.com");
+    } catch {
+      return false;
+    }
+  }
+
   useEffect(() => {
     if (!isFiatReturn) return;
 
@@ -114,12 +125,16 @@ export function CheckoutForm({
 
     if (res.ok) {
       if (path === "fiat") {
-        if (typeof data?.payment_url === "string") {
+        if (isStripeCheckoutUrl(data?.payment_url)) {
           window.location.href = data.payment_url;
           return;
         }
 
-        setError("Missing payment URL");
+        setError(
+          data?.payment_url
+            ? "Payment provider returned a non-Stripe checkout URL."
+            : "Missing payment URL"
+        );
         setLoading(null);
         return;
       }
@@ -203,7 +218,7 @@ export function CheckoutForm({
       <div className="border border-border rounded-xl p-4">
         <div className="mb-3">
           <h2 className="font-medium">Pay with Fiat</h2>
-          <p className="text-sm text-gray-500">Pay directly with XunhuPay. The merchant receives credits automatically after payment.</p>
+          <p className="text-sm text-gray-500">Pay securely with Stripe. The merchant receives credits automatically after payment.</p>
         </div>
 
         {allowFiatCheckout ? (
@@ -214,7 +229,7 @@ export function CheckoutForm({
               disabled={loading !== null}
               className="w-full py-3 bg-foreground text-background rounded-xl font-medium disabled:opacity-50 transition-colors"
             >
-              {loading === "fiat" ? "Processing payment..." : `Pay ${fiatAmountUsd.toFixed(2)} with XunhuPay`}
+              {loading === "fiat" ? "Processing payment..." : `Pay ${fiatAmountUsd.toFixed(2)} with Stripe`}
             </button>
           </div>
         ) : (

@@ -50,7 +50,11 @@ export default async function DeveloperPage() {
           <div className="text-gray-500">Webhook URL</div>
           <div className="text-xs break-all">{merchant.webhook_url || "Not set"}</div>
           <div className="text-gray-500">Webhook Secret</div>
-          <div className="font-mono text-xs">{merchant.webhook_secret.slice(0, 8)}...{merchant.webhook_secret.slice(-4)}</div>
+          <div className="font-mono text-xs">
+            {merchant.webhook_secret
+              ? `${merchant.webhook_secret.slice(0, 8)}...${merchant.webhook_secret.slice(-4)}`
+              : "Generated when migrations are applied"}
+          </div>
         </div>
       </div>
 
@@ -92,12 +96,18 @@ Content-Type: application/json
   "url": "https://anypay.com/checkout/session_uuid",
   "amount_credit": 100,
   "status": "pending",
-  "expires_at": "..."
+  "expires_at": "...",
+  "payment_methods": {
+    "credit": true,
+    "fiat": true,
+    "mock_fiat": false
+  }
 }`}</pre>
 
           <p><strong>3. Receive webhook on completion:</strong></p>
           <pre className="bg-muted p-3 rounded-lg text-xs overflow-x-auto">{`POST your_webhook_url
 X-AnyPay-Signature: hmac_sha256_hex
+X-AnyPay-Signature-Version: v1
 X-AnyPay-Timestamp: 1234567890
 
 {
@@ -106,9 +116,10 @@ X-AnyPay-Timestamp: 1234567890
     "id": "session_uuid",
     "external_id": "order_123",
     "amount_credit": 100,
-    "net_credit": 95,
     "metadata": { "plan": "premium" },
     "payer_id": "user_uuid",
+    "payer_email": "payer@example.com",
+    "payment_method": "credit",
     "completed_at": "..."
   }
 }`}</pre>
@@ -117,7 +128,7 @@ X-AnyPay-Timestamp: 1234567890
           <pre className="bg-muted p-3 rounded-lg text-xs overflow-x-auto">{`const crypto = require('crypto');
 const expected = crypto
   .createHmac('sha256', webhook_secret)
-  .update(request_body)
+  .update(\`\${request.headers['x-anypay-timestamp']}.\${request_body}\`)
   .digest('hex');
 const valid = expected === request.headers['x-anypay-signature'];`}</pre>
         </div>

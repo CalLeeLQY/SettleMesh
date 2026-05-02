@@ -1,14 +1,8 @@
-import { finalizeLinkedCheckoutForTopup } from "@/lib/checkout";
+import { finalizeStripeTopupSession } from "@/lib/stripe-finalizers";
 import { getAdminClient } from "@/lib/merchant-auth";
 import { createClient } from "@/lib/supabase/server";
-import { queryXunhuPayment } from "@/lib/xunhupay";
+import { getStripeClient } from "@/lib/stripe";
 import { NextResponse } from "next/server";
-
-type CompleteTopupRpcResult = {
-  ok: boolean;
-  status: number;
-  error?: string;
-};
 
 type TopupOrderRow = {
   id: string;
@@ -62,43 +56,39 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  if (order.status === "awaiting_payment" && order.payment_method === "xunhupay") {
+  if (order.status === "awaiting_payment" && order.payment_method === "stripe") {
     try {
-      const query = await queryXunhuPayment({
-        tradeOrderId: order.id,
-        openOrderId: order.payment_provider_id ?? undefined,
-      });
+      if (order.payment_provider_id) {
+        const stripe = getStripeClient();
+        const stripeSession = await stripe.checkout.sessions.retrieve(order.payment_provider_id);
 
-      if (query.status === "OD") {
-        const { data, error } = await admin.rpc("complete_topup_order", {
-          p_order_id: order.id,
-          p_provider_id: query.providerOrderId,
-          p_provider_session: JSON.stringify(query.raw),
-          p_paid_at: new Date().toISOString(),
-        });
-
-        const result = data as CompleteTopupRpcResult | null;
-        if (error || !result?.ok) {
-          return NextResponse.json(
-            { error: result?.error ?? error?.message ?? "Failed to finalize payment" },
-            { status: Number(result?.status ?? 500) }
-          );
+        if (stripeSession.payment_status === "paid") {
+          const result = await finalizeStripeTopupSession(stripeSession);
+          if (!result.ok) {
+            return NextResponse.json(
+              { error: result.error ?? "Failed to finalize payment" },
+              { status: Number(result.status ?? 500) }
+            );
+          }
         }
 
-        const checkoutResult = await finalizeLinkedCheckoutForTopup(order.id);
-        if (!checkoutResult.ok) {
-          console.error("[topup/status] Failed to finalize linked checkout:", checkoutResult.error);
+        if (stripeSession.status === "expired") {
+          await admin
+            .from("topup_orders")
+            .update({
+              status: "expired",
+              payment_provider_session: JSON.stringify(stripeSession),
+              payment_method: "stripe",
+            })
+            .eq("id", order.id)
+            .eq("status", "awaiting_payment");
         }
-      }
-
-      if (query.status === "CD") {
+      } else if (order.expires_at && new Date(order.expires_at) < new Date()) {
         await admin
           .from("topup_orders")
           .update({
-            status: "failed",
-            payment_provider_id: query.providerOrderId,
-            payment_provider_session: JSON.stringify(query.raw),
-            payment_method: "xunhupay",
+            status: "expired",
+            payment_method: "stripe",
           })
           .eq("id", order.id)
           .eq("status", "awaiting_payment");
@@ -106,7 +96,7 @@ export async function GET(request: Request) {
 
       order = (await readOrder()) ?? order;
     } catch (err) {
-      console.error("[topup/status] XunhuPay query failed:", err);
+      console.error("[topup/status] Stripe query failed:", err);
     }
   }
 

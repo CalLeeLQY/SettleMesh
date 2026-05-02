@@ -1,7 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/merchant-auth";
-import { createXunhuPayment } from "@/lib/xunhupay";
+import { getSafeRedirectPath } from "@/lib/redirect";
+import { dollarsToCents, getStripeClient } from "@/lib/stripe";
 import { NextResponse } from "next/server";
+
+function getCheckoutSessionIdFromRedirectPath(path: string) {
+  const match = path.match(/^\/checkout\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:[/?#]|$)/i);
+  return match?.[1] ?? null;
+}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -48,6 +54,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid package price" }, { status: 400 });
   }
 
+  const safeNextPath = getSafeRedirectPath(next, "/dashboard");
+  const linkedCheckoutSessionId = getCheckoutSessionIdFromRedirectPath(safeNextPath);
+  if (linkedCheckoutSessionId) {
+    const { data: linkedSession } = await admin
+      .from("checkout_sessions")
+      .select("id, status, expires_at")
+      .eq("id", linkedCheckoutSessionId)
+      .eq("status", "pending")
+      .single();
+
+    if (!linkedSession || new Date(linkedSession.expires_at) < new Date()) {
+      return NextResponse.json(
+        { error: "Linked checkout session is not payable" },
+        { status: 400 }
+      );
+    }
+  }
+
   const idempotencyKey = `topup_${user.id}_${package_id}_${Date.now()}`;
 
   // Create topup order
@@ -60,8 +84,9 @@ export async function POST(request: Request) {
       bonus_credit: pkg.bonus_credit,
       price_usd: pkg.price_usd,
       status: "awaiting_payment",
-      payment_method: "xunhupay",
+      payment_method: "stripe",
       idempotency_key: idempotencyKey,
+      checkout_session_id: linkedCheckoutSessionId,
       expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     })
     .select()
@@ -72,39 +97,59 @@ export async function POST(request: Request) {
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-  const returnUrl = process.env.XUNHUPAY_RETURN_URL
-    ? new URL(process.env.XUNHUPAY_RETURN_URL)
-    : new URL("/topup", baseUrl);
+  const returnUrl = new URL("/topup", baseUrl);
 
   returnUrl.searchParams.set("order_id", order.id);
+  returnUrl.searchParams.set("stripe_session_id", "{CHECKOUT_SESSION_ID}");
   if (next) {
-    returnUrl.searchParams.set("next", next);
+    returnUrl.searchParams.set("next", safeNextPath);
   }
 
-  const notifyUrl = process.env.XUNHUPAY_NOTIFY_URL || new URL("/api/topup/xunhupay/notify", baseUrl).toString();
+  const cancelUrl = new URL("/topup", baseUrl);
+  if (next) {
+    cancelUrl.searchParams.set("next", safeNextPath);
+  }
 
   try {
-    const payment = await createXunhuPayment({
-      tradeOrderId: order.id,
-      totalFee,
-      title: pkg.label,
-      notifyUrl,
-      returnUrl: returnUrl.toString(),
+    const stripe = getStripeClient();
+    const checkoutSession = await stripe.checkout.sessions.create({
+      mode: "payment",
+      client_reference_id: order.id,
+      success_url: returnUrl.toString(),
+      cancel_url: cancelUrl.toString(),
+      metadata: {
+        kind: "topup",
+        order_id: order.id,
+        user_id: user.id,
+      },
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: dollarsToCents(totalFee),
+            product_data: {
+              name: pkg.label,
+              description: `${totalCredit.toLocaleString()} AnyPay credits`,
+            },
+          },
+        },
+      ],
     });
 
     await admin
       .from("topup_orders")
       .update({
-        payment_provider_id: payment.providerOrderId,
-        payment_provider_session: JSON.stringify(payment.raw),
-        payment_method: "xunhupay",
+        payment_provider_id: checkoutSession.id,
+        payment_provider_session: JSON.stringify(checkoutSession),
+        payment_method: "stripe",
       })
       .eq("id", order.id);
 
     return NextResponse.json({
       success: true,
       order_id: order.id,
-      payment_url: payment.paymentUrl,
+      payment_url: checkoutSession.url,
       expires_at: order.expires_at,
     });
   } catch (error) {
@@ -112,7 +157,7 @@ export async function POST(request: Request) {
       .from("topup_orders")
       .update({
         status: "failed",
-        payment_method: "xunhupay",
+        payment_method: "stripe",
       })
       .eq("id", order.id)
       .eq("status", "awaiting_payment");

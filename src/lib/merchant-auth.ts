@@ -54,10 +54,16 @@ export async function verifyApiKey(apiKey: string) {
   return merchant;
 }
 
-export function signWebhookPayload(payload: string, secret: string): string {
+export function signWebhookPayload(
+  payload: string,
+  secret: string,
+  timestamp?: string
+): string {
+  const signedPayload = timestamp ? `${timestamp}.${payload}` : payload;
+
   return crypto
     .createHmac("sha256", secret)
-    .update(payload)
+    .update(signedPayload)
     .digest("hex");
 }
 

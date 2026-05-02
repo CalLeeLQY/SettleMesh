@@ -1,5 +1,6 @@
 import { getAdminClient } from "@/lib/merchant-auth";
-import { createXunhuPayment } from "@/lib/xunhupay";
+import { canUseGuestFiatCheckout } from "@/lib/payment-options";
+import { dollarsToCents, getStripeClient } from "@/lib/stripe";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -53,10 +54,7 @@ export async function POST(request: Request) {
     mock_fiat_enabled?: boolean;
   } | null;
   const merchantName = merchant?.name ?? "Merchant";
-  const fiatCheckoutAvailable =
-    merchant?.allow_guest_checkout !== false &&
-    merchant?.mock_fiat_enabled !== false &&
-    creditAmount >= (merchant?.guest_checkout_min_credit ?? 0);
+  const fiatCheckoutAvailable = canUseGuestFiatCheckout(merchant, creditAmount);
 
   if (!fiatCheckoutAvailable) {
     return NextResponse.json({ error: "Fiat checkout is unavailable for this payment" }, { status: 400 });
@@ -67,17 +65,31 @@ export async function POST(request: Request) {
   const returnUrl = new URL(`/checkout/${session_id}`, baseUrl);
   returnUrl.searchParams.set("fiat_return", "1");
 
-  const notifyUrl =
-    process.env.XUNHUPAY_CHECKOUT_NOTIFY_URL ||
-    new URL("/api/v1/checkout/fiat/notify", baseUrl).toString();
-
   try {
-    const payment = await createXunhuPayment({
-      tradeOrderId: session.id,
-      totalFee: fiatAmount,
-      title: `${merchantName}: ${session.description}`,
-      notifyUrl,
-      returnUrl: returnUrl.toString(),
+    const stripe = getStripeClient();
+    const checkoutSession = await stripe.checkout.sessions.create({
+      mode: "payment",
+      client_reference_id: session.id,
+      customer_email: typeof payer_email === "string" && payer_email.trim() ? payer_email.trim() : undefined,
+      success_url: returnUrl.toString(),
+      cancel_url: new URL(`/checkout/${session_id}`, baseUrl).toString(),
+      metadata: {
+        kind: "checkout_fiat",
+        checkout_session_id: session.id,
+      },
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: dollarsToCents(fiatAmount),
+            product_data: {
+              name: `${merchantName}: ${session.description}`,
+              description: `${creditAmount.toLocaleString()} AnyPay credits`,
+            },
+          },
+        },
+      ],
     });
 
     await admin
@@ -86,8 +98,8 @@ export async function POST(request: Request) {
         payer_id: null,
         payer_email: typeof payer_email === "string" && payer_email.trim() ? payer_email.trim() : null,
         payer_name: typeof payer_name === "string" ? payer_name : null,
-        payment_provider_id: payment.providerOrderId,
-        payment_provider_session: JSON.stringify(payment.raw),
+        payment_provider_id: checkoutSession.id,
+        payment_provider_session: JSON.stringify(checkoutSession),
         payment_provider_status: "awaiting_payment",
         payment_started_at: new Date().toISOString(),
       })
@@ -96,7 +108,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       session_id: session.id,
-      payment_url: payment.paymentUrl,
+      payment_url: checkoutSession.url,
       fiat_amount: fiatAmount,
     });
   } catch (error) {
