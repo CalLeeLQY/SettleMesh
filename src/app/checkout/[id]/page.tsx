@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getServerViewer } from "@/lib/supabase/viewer";
 import { canUseGuestFiatCheckout } from "@/lib/payment-options";
 import { Coins } from "lucide-react";
 import { CheckoutForm } from "./checkout-form";
@@ -9,11 +9,7 @@ export default async function CheckoutPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getServerViewer();
 
   const { createClient: createServiceClient } = await import("@supabase/supabase-js");
   const admin = createServiceClient(

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getServerViewer } from "@/lib/supabase/viewer";
 import { Nav } from "./nav";
 
 export default async function AppLayout({
@@ -7,26 +7,24 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getServerViewer();
 
   if (!user) {
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("username, avatar_url")
-    .eq("id", user.id)
-    .single();
-
-  const { data: wallet } = await supabase
-    .from("wallets")
-    .select("available_credit")
-    .eq("user_id", user.id)
-    .single();
+  const [{ data: profile }, { data: wallet }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("username, avatar_url")
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("wallets")
+      .select("available_credit")
+      .eq("user_id", user.id)
+      .single(),
+  ]);
 
   return (
     <div className="flex flex-col min-h-full">

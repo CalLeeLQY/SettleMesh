@@ -1,14 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
+import { getServerViewer } from "@/lib/supabase/viewer";
 import { redirect } from "next/navigation";
 import { MerchantSetup } from "./merchant-setup";
 import { ApiKeyManager } from "./api-key-manager";
 import { MerchantSettingsForm } from "./merchant-settings-form";
 
 export default async function DeveloperPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getServerViewer();
 
   if (!user) redirect("/login");
 

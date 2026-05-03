@@ -12,6 +12,7 @@ type StripeCheckoutPaymentMethodConfig = {
 };
 
 const DEFAULT_CHECKOUT_PAYMENT_METHOD_TYPES: CheckoutPaymentMethodType[] = ["card"];
+const PAYMENT_METHOD_UNAVAILABLE_PATTERN = /wechat_pay|No valid payment method types/i;
 
 export function getStripeClient() {
   if (stripeClient) {
@@ -76,6 +77,41 @@ export function getStripeCheckoutPaymentMethodConfig(): StripeCheckoutPaymentMet
       ? { payment_method_options: paymentMethodOptions }
       : {}),
   };
+}
+
+function shouldFallbackToCard(error: unknown) {
+  return error instanceof Error && PAYMENT_METHOD_UNAVAILABLE_PATTERN.test(error.message);
+}
+
+function hasNonCardPaymentMethod(config: StripeCheckoutPaymentMethodConfig) {
+  return config.payment_method_types?.some((type) => type !== "card") ?? false;
+}
+
+function shouldUseCardFallback(config: StripeCheckoutPaymentMethodConfig) {
+  return !config.payment_method_types || hasNonCardPaymentMethod(config);
+}
+
+export async function createStripeCheckoutSession(
+  params: Parameters<Stripe["checkout"]["sessions"]["create"]>[0]
+) {
+  const stripe = getStripeClient();
+  const paymentMethodConfig = getStripeCheckoutPaymentMethodConfig();
+
+  try {
+    return await stripe.checkout.sessions.create({
+      ...params,
+      ...paymentMethodConfig,
+    });
+  } catch (error) {
+    if (!shouldUseCardFallback(paymentMethodConfig) || !shouldFallbackToCard(error)) {
+      throw error;
+    }
+
+    return stripe.checkout.sessions.create({
+      ...params,
+      payment_method_types: ["card"],
+    });
+  }
 }
 
 export function stripeAmountMatches(

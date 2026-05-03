@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getSafeRedirectPath } from "@/lib/redirect";
-import { dollarsToCents, getStripeCheckoutPaymentMethodConfig, getStripeClient } from "@/lib/stripe";
+import { createStripeCheckoutSession, dollarsToCents } from "@/lib/stripe";
 import { NextResponse } from "next/server";
 
 type StripeTopupOrder = {
@@ -80,10 +80,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const stripe = getStripeClient();
-    const checkoutSession = await stripe.checkout.sessions.create({
+    const checkoutSession = await createStripeCheckoutSession({
       mode: "payment",
-      ...getStripeCheckoutPaymentMethodConfig(),
       client_reference_id: topupOrder.id,
       success_url: returnUrl.toString(),
       cancel_url: cancelUrl.toString(),

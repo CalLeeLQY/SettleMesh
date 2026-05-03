@@ -1,13 +1,10 @@
-import { createClient } from "@/lib/supabase/server";
+import { getServerViewer } from "@/lib/supabase/viewer";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Coins, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { supabase, user } = await getServerViewer();
 
   if (!user) redirect("/login");
 
