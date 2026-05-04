@@ -1,7 +1,58 @@
 import Stripe from "stripe";
 
 let stripeClient: Stripe | null = null;
-type CheckoutPaymentMethodType = "card" | "wechat_pay";
+type CheckoutPaymentMethodType =
+  | "acss_debit"
+  | "affirm"
+  | "afterpay_clearpay"
+  | "alipay"
+  | "alma"
+  | "amazon_pay"
+  | "au_becs_debit"
+  | "bacs_debit"
+  | "bancontact"
+  | "billie"
+  | "blik"
+  | "boleto"
+  | "card"
+  | "cashapp"
+  | "crypto"
+  | "customer_balance"
+  | "eps"
+  | "fpx"
+  | "giropay"
+  | "grabpay"
+  | "ideal"
+  | "kakao_pay"
+  | "klarna"
+  | "konbini"
+  | "kr_card"
+  | "link"
+  | "mb_way"
+  | "mobilepay"
+  | "multibanco"
+  | "naver_pay"
+  | "nz_bank_account"
+  | "oxxo"
+  | "p24"
+  | "pay_by_bank"
+  | "payco"
+  | "paynow"
+  | "paypal"
+  | "payto"
+  | "pix"
+  | "promptpay"
+  | "revolut_pay"
+  | "samsung_pay"
+  | "satispay"
+  | "sepa_debit"
+  | "sofort"
+  | "sunbit"
+  | "swish"
+  | "twint"
+  | "upi"
+  | "us_bank_account"
+  | "wechat_pay";
 type StripeCheckoutPaymentMethodConfig = {
   payment_method_types?: CheckoutPaymentMethodType[];
   payment_method_options?: {
@@ -11,8 +62,14 @@ type StripeCheckoutPaymentMethodConfig = {
   };
 };
 
-const DEFAULT_CHECKOUT_PAYMENT_METHOD_TYPES: CheckoutPaymentMethodType[] = ["card"];
 const PAYMENT_METHOD_UNAVAILABLE_PATTERN = /wechat_pay|No valid payment method types/i;
+const DYNAMIC_PAYMENT_METHOD_VALUES = new Set(["all", "auto", "automatic", "dashboard", "dynamic"]);
+
+const PAYMENT_METHOD_ALIASES: Record<string, CheckoutPaymentMethodType> = {
+  apple_pay: "card",
+  cash_app_pay: "cashapp",
+  google_pay: "card",
+};
 
 export function getStripeClient() {
   if (stripeClient) {
@@ -55,16 +112,27 @@ export function dollarsToCents(value: number | string) {
 export function getStripeCheckoutPaymentMethodConfig(): StripeCheckoutPaymentMethodConfig {
   const rawTypes = process.env.STRIPE_PAYMENT_METHOD_TYPES?.trim();
 
-  if (rawTypes && ["auto", "automatic", "dynamic"].includes(rawTypes.toLowerCase())) {
+  if (!rawTypes || DYNAMIC_PAYMENT_METHOD_VALUES.has(rawTypes.toLowerCase())) {
     return {};
   }
 
-  const paymentMethodTypes = (rawTypes
-    ? rawTypes
+  const paymentMethodTypes = Array.from(
+    new Set(
+      rawTypes
         .split(",")
-        .map((type) => type.trim())
+        .map((type) => type.trim().toLowerCase())
         .filter(Boolean)
-    : DEFAULT_CHECKOUT_PAYMENT_METHOD_TYPES) as CheckoutPaymentMethodType[];
+        .map((type) => PAYMENT_METHOD_ALIASES[type] ?? (type as CheckoutPaymentMethodType))
+    )
+  );
+
+  if (paymentMethodTypes.length === 0) {
+    return {};
+  }
+
+  if (paymentMethodTypes.includes("link") && !paymentMethodTypes.includes("card")) {
+    paymentMethodTypes.unshift("card");
+  }
 
   const paymentMethodOptions: NonNullable<StripeCheckoutPaymentMethodConfig["payment_method_options"]> = {};
   if (paymentMethodTypes.includes("wechat_pay")) {
