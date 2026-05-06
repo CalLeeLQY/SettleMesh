@@ -1,3 +1,5 @@
+import { MIN_STRIPE_PAYMENT_AMOUNT_CREDIT } from "@/lib/protocol";
+
 export type MerchantCheckoutSettings = {
   allow_guest_checkout?: boolean | null;
   guest_checkout_min_credit?: number | null;
@@ -23,6 +25,7 @@ export function canUseGuestFiatCheckout(
   return (
     Boolean(merchant) &&
     merchant?.allow_guest_checkout !== false &&
+    amountCredit >= MIN_STRIPE_PAYMENT_AMOUNT_CREDIT &&
     amountCredit >= (merchant?.guest_checkout_min_credit ?? 0)
   );
 }

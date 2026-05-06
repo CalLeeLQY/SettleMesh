@@ -1,5 +1,6 @@
 import { getAdminClient } from "@/lib/merchant-auth";
 import { deliverCheckoutWebhook } from "@/lib/webhook-delivery";
+import { after } from "next/server";
 
 interface CompleteCheckoutInput {
   sessionId: string;
@@ -74,17 +75,6 @@ export async function completeCheckoutSession({
   const completedAt = result.completed_at ?? new Date().toISOString();
 
   if (!result.already_processed && result.webhook_url && result.webhook_secret) {
-    let merchantId = result.merchant_id ?? null;
-    if (!merchantId) {
-      const { data: session } = await admin
-        .from("checkout_sessions")
-        .select("merchant_id")
-        .eq("id", resolvedSessionId)
-        .single();
-
-      merchantId = session?.merchant_id ?? null;
-    }
-
     const webhookPayload = JSON.stringify({
       event: "checkout.completed",
       data: {
@@ -101,12 +91,25 @@ export async function completeCheckoutSession({
       },
     });
 
-    await deliverCheckoutWebhook({
-      checkoutSessionId: resolvedSessionId,
-      merchantId,
-      webhookUrl: result.webhook_url,
-      webhookSecret: result.webhook_secret,
-      payload: webhookPayload,
+    after(async () => {
+      let merchantId = result.merchant_id ?? null;
+      if (!merchantId) {
+        const { data: session } = await admin
+          .from("checkout_sessions")
+          .select("merchant_id")
+          .eq("id", resolvedSessionId)
+          .single();
+
+        merchantId = session?.merchant_id ?? null;
+      }
+
+      await deliverCheckoutWebhook({
+        checkoutSessionId: resolvedSessionId,
+        merchantId,
+        webhookUrl: result.webhook_url!,
+        webhookSecret: result.webhook_secret!,
+        payload: webhookPayload,
+      });
     });
   }
 

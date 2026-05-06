@@ -55,7 +55,7 @@ function TopupContent() {
       .order("sort_order")
       .then(({ data }) => {
         if (data) setPackages(data);
-        if (data && data.length > 0) setSelected(data[1]?.id ?? data[0].id);
+        if (data && data.length > 0) setSelected(data[0].id);
       });
   }, [supabase]);
 

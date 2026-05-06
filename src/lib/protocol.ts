@@ -1,6 +1,9 @@
 export const PAYMENT_PROTOCOL_VERSION = "settlemesh-2026-05-02";
 export const CREDIT_ASSET = "credit";
 export const CREDIT_TO_USD_RATE = 100;
+export const MIN_STRIPE_PAYMENT_AMOUNT_USD = 0.5;
+export const MIN_STRIPE_PAYMENT_AMOUNT_CREDIT =
+  MIN_STRIPE_PAYMENT_AMOUNT_USD * CREDIT_TO_USD_RATE;
 
 export type PaymentMethods = {
   credit: boolean;

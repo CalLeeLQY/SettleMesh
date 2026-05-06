@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { MIN_STRIPE_PAYMENT_AMOUNT_USD } from "@/lib/protocol";
 
 let stripeClient: Stripe | null = null;
 type CheckoutPaymentMethodType =
@@ -104,6 +105,12 @@ export function dollarsToCents(value: number | string) {
   const amount = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Invalid payment amount");
+  }
+
+  if (amount < MIN_STRIPE_PAYMENT_AMOUNT_USD) {
+    throw new Error(
+      `Stripe test payments must be at least $${MIN_STRIPE_PAYMENT_AMOUNT_USD.toFixed(2)}`
+    );
   }
 
   return Math.round(amount * 100);

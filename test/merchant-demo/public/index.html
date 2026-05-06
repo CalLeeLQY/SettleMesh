@@ -24,9 +24,7 @@
         margin: 0;
         min-height: 100vh;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background:
-          radial-gradient(circle at top, rgba(59, 130, 246, 0.22), transparent 34%),
-          linear-gradient(180deg, #0b1020 0%, #111827 100%);
+        background: #0b1020;
         color: var(--text);
         display: flex;
         align-items: center;
@@ -144,6 +142,35 @@
         gap: 14px;
       }
 
+      .steps {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 10px;
+        align-items: start;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .step span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(34, 197, 94, 0.14);
+        color: #bbf7d0;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
       .product-card {
         padding: 18px;
         border-radius: 18px;
@@ -192,6 +219,10 @@
         font-size: 13px;
       }
 
+      code {
+        color: #dbeafe;
+      }
+
       @media (max-width: 860px) {
         .shell {
           grid-template-columns: 1fr;
@@ -207,10 +238,10 @@
     <main class="shell">
       <section class="card">
         <div class="badge">Local Merchant Test Site</div>
-        <h1>Simple merchant website for local checkout testing</h1>
+        <h1>SettleMesh merchant checkout test</h1>
         <p class="lead">
-          This is a standalone demo storefront under the <code>test</code> folder. It now creates hosted checkout
-          sessions through your merchant backend and redirects the buyer into AnyPay.
+          This standalone storefront creates a SettleMesh hosted checkout from its own backend, redirects the buyer,
+          and receives completion webhooks after payment.
         </p>
         <div class="actions">
           <a class="button primary" href="#products">Browse products</a>
@@ -222,7 +253,7 @@
             <div class="value">Ready</div>
           </div>
           <div class="stat">
-            <div class="label">AnyPay integration</div>
+            <div class="label">SettleMesh integration</div>
             <div class="value">API connected</div>
           </div>
           <div class="stat">
@@ -239,17 +270,20 @@
       <section class="card product" id="products">
         <div class="product-card">
           <h2>Starter Pack</h2>
-          <p class="meta">A test product that creates a merchant checkout session and redirects into hosted AnyPay checkout.</p>
-          <div class="price">$0.10</div>
-          <button class="buy" type="button" id="buy-button">Buy with AnyPay</button>
+          <p class="meta">A test product that creates a merchant checkout session and redirects into hosted SettleMesh checkout.</p>
+          <div class="price">50 credits / $0.50 test checkout</div>
+          <button class="buy" type="button" id="buy-button">Buy with SettleMesh</button>
           <p class="hint" id="status">Click to create a real checkout session through your merchant API key.</p>
         </div>
 
         <div class="product-card">
-          <h2>What to add next</h2>
-          <p class="meta">
-            After this works, you can add logged-in user identity, order persistence, webhooks, and post-payment fulfillment.
-          </p>
+          <h2>Integration path</h2>
+          <div class="steps">
+            <div class="step"><span>1</span><p>Create a merchant in SettleMesh Developer and copy the API key.</p></div>
+            <div class="step"><span>2</span><p>Your server calls <code>POST /api/v1/checkout/create</code>.</p></div>
+            <div class="step"><span>3</span><p>Redirect the buyer to the returned checkout URL.</p></div>
+            <div class="step"><span>4</span><p>Fulfill the order from the signed <code>checkout.completed</code> webhook.</p></div>
+          </div>
         </div>
       </section>
     </main>
@@ -260,7 +294,7 @@
       const pathname = window.location.pathname;
 
       if (pathname === "/success") {
-        status.textContent = "Returned from merchant success page. You can inspect the completed checkout in AnyPay.";
+        status.textContent = "Returned from merchant success page. Waiting for webhook delivery or status check.";
       }
 
       if (pathname === "/cancel") {
@@ -279,7 +313,7 @@
             },
             body: JSON.stringify({
               product_id: "starter-pack",
-              amount: 10,
+              amount: 50,
               description: "Starter Pack"
             })
           });
@@ -290,7 +324,8 @@
             throw new Error(payload.error || "Failed to create checkout session");
           }
 
-          status.textContent = "Checkout created. Redirecting to AnyPay...";
+          window.localStorage.setItem("settlemesh_last_checkout_id", payload.checkout_id);
+          status.textContent = "Checkout created. Redirecting to SettleMesh...";
           window.location.href = payload.checkout_url;
         } catch (error) {
           status.textContent = error instanceof Error ? error.message : "Unexpected error creating checkout";
